@@ -60,11 +60,34 @@
   .field { font-size: 13px; font-weight: 600; color: var(--accent); margin-top: 6px; }
   .summary { font-size: 14px; color: var(--ink); margin-top: 2px; }
   .src { font-size: 12px; color: var(--muted); }
-  .route-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-top: 1px solid var(--line); }
+  .guide { margin-top: 8px; border-top: 1px solid var(--line); padding-top: 6px; }
+  .guide summary { font-size: 13px; color: var(--accent); font-weight: 600; cursor: pointer; padding: 4px 0; }
+  .majors { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0 2px; }
+  .major { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--bg); border: 1px solid var(--line); }
+  .g-label { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin-top: 8px; }
+  .g-text { font-size: 14px; margin-top: 2px; }
+  .g-links { display: flex; gap: 16px; margin-top: 8px; font-size: 14px; }
+  .g-links a { color: var(--accent); }
+  .route-row { display: flex; align-items: flex-start; gap: 8px; padding: 8px 0; border-top: 1px solid var(--line); }
+  .route-body { flex: 1; min-width: 0; }
+  .route-meta { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .route-note { font-size: 13px; margin-top: 4px; padding-left: 8px; border-left: 2px solid var(--line); white-space: pre-wrap; }
+  .route-body .guide { margin-top: 6px; }
   .route-row:first-of-type { border-top: 0; }
   .booth-pill { min-width: 54px; text-align: center; font-weight: 600; font-size: 13px; background: var(--accent); color: #fff; border-radius: 6px; padding: 3px 6px; }
   .booth-pill.iv { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
   .pri { font-size: 12px; color: var(--hot); font-weight: 600; }
+  .map-wrap { overflow: auto; background: var(--card); border: 1px solid var(--line); border-radius: 12px; max-height: 60vh; -webkit-overflow-scrolling: touch; }
+  .map-wrap svg { display: block; min-width: 100%; }
+  .bt rect { fill: #d5d9e6; stroke: var(--card); stroke-width: 0.6; }
+  .bt.open rect { fill: transparent; stroke: var(--line); }
+  .bt.hot rect { fill: var(--hot); }
+  .bt.maybe rect { fill: var(--maybe); }
+  .bt text { fill: #fff; font-weight: 700; pointer-events: none; }
+  .map-controls { display: flex; align-items: center; gap: 6px; margin: 8px 0; }
+  .map-key { font-size: 12px; color: var(--muted); margin-left: auto; display: flex; align-items: center; gap: 4px; }
+  .sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-left: 6px; }
+  .sw.hot { background: var(--hot); } .sw.maybe { background: var(--maybe); } .sw.other { background: #d5d9e6; }
   .hidden { display: none !important; }
   .add-row { display: flex; gap: 8px; }
   .add-row input { flex: 1; }
@@ -78,7 +101,7 @@
     <button id="tab-companies" class="on" data-tab="companies">Companies</button>
     <button id="tab-interviews" data-tab="interviews">Interviews</button>
     <button id="tab-mine" data-tab="mine">My List</button>
-    <button id="tab-route" data-tab="route">Route</button>
+    <button id="tab-route" data-tab="route">Map</button>
     <button id="tab-backup" data-tab="backup">Backup</button>
   </nav>
 </header>
@@ -87,7 +110,7 @@
   <!-- Companies: all exhibitors on the main floor, with interview booths merged in -->
   <section id="view-companies">
     <div class="toolbar">
-      <input id="search" type="search" placeholder="Search company or booth">
+      <input id="search" type="search" placeholder="Search company, booth, or major">
       <div class="chips" id="filters-companies"></div>
       <div class="count" id="count-companies"></div>
     </div>
@@ -119,13 +142,21 @@
     </div>
   </section>
 
-  <!-- Route: selected companies grouped by booth area, in walking order -->
+  <!-- Map: floor plan with selected companies highlighted, then the walking list by booth area -->
   <section id="view-route" class="hidden">
     <div class="toolbar">
       <div class="chips" id="filters-route"></div>
-      <div class="count" id="count-route"></div>
+      <div class="chips" id="map-halls"></div>
     </div>
-    <p class="note-block">Booth numbers aren't map coordinates, so stops are grouped by hundreds (for example, 2200s) and listed in numeric order. Check the EXPOCAD floor plan for exact positions.</p>
+    <div class="map-wrap" id="map-wrap"><div id="map-svg"></div></div>
+    <div class="map-controls">
+      <button class="chip" id="map-out" aria-label="Zoom out">−</button>
+      <button class="chip" id="map-in" aria-label="Zoom in">+</button>
+      <span class="map-key"><i class="sw hot"></i>Priority <i class="sw maybe"></i>Maybe <i class="sw other"></i>Other</span>
+    </div>
+    <div class="card hidden" id="map-info"></div>
+    <div class="section-title">Walking list</div>
+    <div class="count" id="count-route"></div>
     <div id="list-route"></div>
   </section>
 
@@ -149,6 +180,7 @@
 </main>
 
 <script src="roster.js"></script>
+<script src="floorplan.js"></script>
 <script>
 (function () {
   "use strict";
@@ -180,6 +212,13 @@
   }
   function addContext(c, r) {
     if (r.field) { c.field = r.field; c.summary = r.summary; c.source = r.source; }
+    if (r.guide) c.guide = r.guide;
+  }
+  // text the search boxes match against (besides name and booths)
+  function contextText(c) {
+    var g = c.guide || {};
+    return ((c.field || "") + " " + (c.summary || "") + " " + (g.about || "") + " " + (g.projects || "") + " " +
+            (g.majors || []).join(" ")).toLowerCase();
   }
   roster.main_floor.forEach(function (r) { var c = ensure(r.name); c.mainBooths = r.booths; addContext(c, r); });
   roster.interview.forEach(function (r) { var c = ensure(r.name); c.interviewBooths = r.booths; addContext(c, r); });
@@ -234,6 +273,25 @@
   });
 
   // ---------- card rendering (shared by all lists)
+  // SHPE UF Corporate Database page, collapsed by default
+  function guideHtml(g) {
+    if (!g) return '';
+    function sec(label, text) {
+      return text ? '<div class="g-label">' + label + '</div><div class="g-text">' + esc(text) + '</div>' : '';
+    }
+    function link(label, url) {
+      return url ? '<a href="' + esc(url) + '" target="_blank" rel="noopener">' + label + '</a>' : '';
+    }
+    return '<details class="guide"><summary>SHPE UF guide' +
+        (g.majors.length ? ' · ' + g.majors.length + ' majors' : '') + '</summary>' +
+      (g.majors.length ? '<div class="majors">' + g.majors.map(function (m) {
+        return '<span class="major">' + esc(m) + '</span>';
+      }).join('') + '</div>' : '') +
+      sec('About', g.about) + sec('Recent projects', g.projects) + sec('Business model', g.business_model) +
+      '<div class="g-links">' + link('Careers', g.career_url) + link('News', g.news_url) + '</div>' +
+      '</details>';
+  }
+
   function card(k, c) {
     var m = meta(k);
     var status = m.status || "";
@@ -253,6 +311,7 @@
       (c.summary ? '<div class="summary">' + esc(c.summary) +
         (c.source === "directory" ? '' : ' <span class="src">(general knowledge, verify)</span>') +
         '</div>' : '') +
+      guideHtml(c.guide) +
       '<div class="status">' +
         '<button class="hot' + (status === "hot" ? " on" : "") + '" data-s="hot">Priority</button>' +
         '<button class="maybe' + (status === "maybe" ? " on" : "") + '" data-s="maybe">Maybe</button>' +
@@ -296,7 +355,7 @@
         if (!q) return true;
         return c.name.toLowerCase().indexOf(q) !== -1 ||
                (c.mainBooths + " " + c.interviewBooths).toLowerCase().indexOf(q) !== -1 ||
-               ((c.field || "") + " " + (c.summary || "")).toLowerCase().indexOf(q) !== -1;
+               contextText(c).indexOf(q) !== -1;
       });
 
     box.innerHTML = "";
@@ -312,7 +371,7 @@
     var list = sortedNames(roster.interview.map(function (r) { return companies[key(r.name)] || { name: r.name, interviewBooths: r.booths }; }))
       .filter(function (c) {
         return !q || c.name.toLowerCase().indexOf(q) !== -1 || (c.interviewBooths || "").toLowerCase().indexOf(q) !== -1 ||
-               ((c.field || "") + " " + (c.summary || "")).toLowerCase().indexOf(q) !== -1;
+               contextText(c).indexOf(q) !== -1;
       });
     box.innerHTML = "";
     list.forEach(function (c) { box.appendChild(card(key(c.name), c)); });
@@ -367,6 +426,74 @@
   function boothsOf(str) {
     return (str || "").split(",").map(function (x) { return x.trim(); }).filter(Boolean);
   }
+  // ---------- Map (drawn from floorplan.js: booth rectangles captured from the EXPOCAD floor plan)
+  var plan = window.FLOORPLAN || {};
+  var mapHall = plan.main ? "main" : "interview";
+  var mapZoom = 1;
+  var hallNames = { main: "Career fair floor", interview: "Interview booths" };
+  // booth number -> company key, from the roster (names on the map can differ from roster names)
+  function boothIndex(field) {
+    var idx = {};
+    Object.keys(companies).forEach(function (k) {
+      boothsOf(companies[k][field]).forEach(function (b) { idx[b] = k; });
+    });
+    return idx;
+  }
+  var boothIdx = {};
+  function companyKeyFor(b) {
+    return boothIdx[b.n] || (b.ex ? key(b.ex) : "");
+  }
+  function renderMap(wanted) {
+    var svgBox = document.getElementById("map-svg");
+    var hbox = document.getElementById("map-halls");
+    hbox.innerHTML = "";
+    Object.keys(hallNames).forEach(function (h) {
+      if (plan[h]) hbox.appendChild(chip(hallNames[h], mapHall === h, function () { mapHall = h; renderRoute(); }));
+    });
+    var hall = plan[mapHall];
+    boothIdx = boothIndex(mapHall === "main" ? "mainBooths" : "interviewBooths");
+    if (!hall) {
+      svgBox.innerHTML = '<p class="note-block">No floor plan data yet.</p>';
+      return;
+    }
+    // crop the view to the booths, with a small margin
+    var x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    hall.booths.forEach(function (b) {
+      x0 = Math.min(x0, b.x); y0 = Math.min(y0, b.y);
+      x1 = Math.max(x1, b.x + b.w); y1 = Math.max(y1, b.y + b.h);
+    });
+    var pad = 10;
+    var vb = [x0 - pad, y0 - pad, x1 - x0 + 2 * pad, y1 - y0 + 2 * pad];
+    var parts = hall.booths.map(function (b, i) {
+      var ck = companyKeyFor(b);
+      var m = ck ? meta(ck) : {};
+      var cls = m.status && wanted.indexOf(m.status) !== -1 ? m.status : (b.ex ? "other" : "open");
+      var label = cls === "hot" || cls === "maybe"
+        ? '<text x="' + (b.x + b.w / 2) + '" y="' + (b.y + b.h / 2) + '" font-size="' + Math.max(3, Math.min(b.w, b.h) / 3) +
+          '" text-anchor="middle" dominant-baseline="central">' + esc(b.n) + '</text>'
+        : "";
+      return '<g data-i="' + i + '" class="bt ' + cls + '"><rect x="' + b.x + '" y="' + b.y + '" width="' + b.w +
+        '" height="' + b.h + '" rx="0.8"/>' + label + '</g>';
+    });
+    svgBox.innerHTML = '<svg viewBox="' + vb.join(" ") + '" style="width:' + (mapZoom * 100) + '%">' + parts.join("") + '</svg>';
+    svgBox.querySelectorAll("g.bt").forEach(function (g) {
+      g.onclick = function () { showBooth(hall.booths[+g.dataset.i]); };
+    });
+  }
+  function showBooth(b) {
+    var info = document.getElementById("map-info");
+    var ck = companyKeyFor(b);
+    var c = ck ? companies[ck] : null;
+    var m = ck ? meta(ck) : {};
+    info.classList.remove("hidden");
+    info.innerHTML = '<div class="name">' + esc((c && c.name) || b.label || "Open booth") + '</div>' +
+      '<div class="booths">Booth ' + esc(b.n || "?") + (m.status ? " · " + esc(m.status === "hot" ? "Priority" : m.status) : "") + '</div>' +
+      (c && c.field ? '<div class="field">' + esc(c.field) + '</div>' : '') +
+      (c && c.summary ? '<div class="summary">' + esc(c.summary) + '</div>' : '');
+  }
+  document.getElementById("map-in").onclick = function () { mapZoom = Math.min(4, mapZoom + 0.5); renderRoute(); };
+  document.getElementById("map-out").onclick = function () { mapZoom = Math.max(1, mapZoom - 0.5); renderRoute(); };
+
   function renderRoute() {
     var fbox = document.getElementById("filters-route");
     var box = document.getElementById("list-route");
@@ -376,14 +503,15 @@
       fbox.appendChild(chip(f[1], routeFilter === f[0], function () { routeFilter = f[0]; renderRoute(); }));
     });
     var wanted = routeFilter === "hot" ? ["hot"] : ["hot", "maybe"];
+    renderMap(wanted);
     // one stop per (company, booth) so a company with several booths appears in each area
     var stops = [];
     Object.keys(state.companies).forEach(function (k) {
       var m = state.companies[k];
       if (wanted.indexOf(m.status) === -1) return;
       var c = companies[k] || { name: m.name || k, mainBooths: "", interviewBooths: "" };
-      boothsOf(c.mainBooths).forEach(function (b) { stops.push({ name: c.name, booth: b, kind: "Booth", status: m.status }); });
-      boothsOf(c.interviewBooths).forEach(function (b) { stops.push({ name: c.name, booth: b, kind: "Interview", status: m.status }); });
+      boothsOf(c.mainBooths).forEach(function (b) { stops.push({ c: c, name: c.name, booth: b, kind: "Booth", status: m.status, note: m.note }); });
+      boothsOf(c.interviewBooths).forEach(function (b) { stops.push({ c: c, name: c.name, booth: b, kind: "Interview", status: m.status, note: m.note }); });
     });
     var groups = {};
     stops.forEach(function (s) {
@@ -400,10 +528,15 @@
       sec.className = "card";
       sec.innerHTML = '<div class="name">' + esc(g.label) + '</div>' +
         g.items.map(function (s) {
+          var g = s.c.guide;
           return '<div class="route-row"><span class="booth-pill ' + (s.kind === "Interview" ? "iv" : "") + '">' +
-            esc(s.booth) + '</span> ' + esc(s.name) +
+            esc(s.booth) + '</span><div class="route-body">' + esc(s.name) +
             (s.kind === "Interview" ? ' <span class="src">interview</span>' : '') +
-            (s.status === "hot" ? ' <span class="pri">priority</span>' : '') + '</div>';
+            (s.status === "hot" ? ' <span class="pri">priority</span>' : '') +
+            (s.c.field ? '<div class="route-meta">' + esc(s.c.field) + '</div>' : '') +
+            (g && g.majors.length ? '<div class="route-meta">' + esc(g.majors.join(", ")) + '</div>' : '') +
+            (s.note ? '<div class="route-note">' + esc(s.note) + '</div>' : '') +
+            guideHtml(g) + '</div></div>';
         }).join("");
       box.appendChild(sec);
     });
