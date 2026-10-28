@@ -1,0 +1,382 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1d3557">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="SHPE Prep">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<title>SHPE 2026 Prep</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #ffffff; --ink: #1b1f24; --muted: #5f6b7a;
+    --line: #dfe3e8; --accent: #1d3557; --hot: #c1121f; --maybe: #b98100; --skip: #8a94a0;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0f1419; --card: #1a2129; --ink: #e8ecf1; --muted: #98a4b3;
+      --line: #2a333d; --accent: #7aa2d6; --hot: #ff6b6b; --maybe: #e0b341; --skip: #6b7785;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0f1419; --card: #1a2129; --ink: #e8ecf1; --muted: #98a4b3;
+    --line: #2a333d; --accent: #7aa2d6; --hot: #ff6b6b; --maybe: #e0b341; --skip: #6b7785;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.4 -apple-system, system-ui, sans-serif; padding-bottom: env(safe-area-inset-bottom); }
+  header { position: sticky; top: 0; z-index: 5; background: var(--accent); color: #fff; padding: 12px 16px 0; }
+  header h1 { margin: 0 0 8px; font-size: 18px; }
+  nav { display: flex; gap: 4px; }
+  nav button { flex: 1; border: 0; background: transparent; color: #fff; padding: 10px 4px; font-size: 15px; border-bottom: 3px solid transparent; }
+  nav button.on { border-bottom-color: #fff; font-weight: 600; }
+  main { padding: 12px 16px 80px; max-width: 720px; margin: 0 auto; }
+  input[type=search], select, textarea {
+    width: 100%; font: inherit; color: var(--ink); background: var(--card);
+    border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px;
+  }
+  .toolbar { display: grid; gap: 8px; margin-bottom: 12px; }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .chip { border: 1px solid var(--line); background: var(--card); color: var(--ink); border-radius: 999px; padding: 6px 12px; font-size: 14px; }
+  .chip.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .count { color: var(--muted); font-size: 13px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin-bottom: 10px; }
+  .card-head { display: flex; justify-content: space-between; gap: 8px; align-items: flex-start; }
+  .name { font-weight: 600; font-size: 16px; }
+  .booths { color: var(--muted); font-size: 13px; margin-top: 2px; }
+  .tag { font-size: 12px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
+  .tag.interview { color: var(--accent); border-color: var(--accent); }
+  .status { display: flex; gap: 6px; margin: 10px 0 6px; }
+  .status button { flex: 1; border: 1px solid var(--line); background: transparent; color: var(--muted); border-radius: 8px; padding: 8px 0; font-size: 14px; }
+  .status button.hot.on { background: var(--hot); color: #fff; border-color: var(--hot); }
+  .status button.maybe.on { background: var(--maybe); color: #fff; border-color: var(--maybe); }
+  .status button.skip.on { background: var(--skip); color: #fff; border-color: var(--skip); }
+  textarea { min-height: 70px; resize: vertical; margin-top: 6px; }
+  .section-title { font-size: 13px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 18px 0 8px; }
+  .btn { border: 0; background: var(--accent); color: #fff; border-radius: 10px; padding: 12px 16px; font-size: 15px; width: 100%; margin-top: 8px; }
+  .btn.secondary { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
+  .note-block { font-size: 13px; color: var(--muted); }
+  .hidden { display: none !important; }
+  .add-row { display: flex; gap: 8px; }
+  .add-row input { flex: 1; }
+  .add-row button { width: auto; margin: 0; padding: 10px 14px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>SHPE 2026 Prep</h1>
+  <nav>
+    <button id="tab-companies" class="on" data-tab="companies">Companies</button>
+    <button id="tab-interviews" data-tab="interviews">Interviews</button>
+    <button id="tab-mine" data-tab="mine">My List</button>
+    <button id="tab-backup" data-tab="backup">Backup</button>
+  </nav>
+</header>
+
+<main>
+  <!-- Companies: all exhibitors on the main floor, with interview booths merged in -->
+  <section id="view-companies">
+    <div class="toolbar">
+      <input id="search" type="search" placeholder="Search company or booth">
+      <div class="chips" id="filters-companies"></div>
+      <div class="count" id="count-companies"></div>
+    </div>
+    <div id="list-companies"></div>
+  </section>
+
+  <!-- Interviews: interview booths on their own map -->
+  <section id="view-interviews" class="hidden">
+    <div class="toolbar">
+      <input id="search-interviews" type="search" placeholder="Search interview companies">
+      <div class="count" id="count-interviews"></div>
+    </div>
+    <div id="list-interviews"></div>
+  </section>
+
+  <!-- My list: anything marked hot or maybe, plus notes -->
+  <section id="view-mine" class="hidden">
+    <div class="toolbar">
+      <div class="chips" id="filters-mine"></div>
+      <div class="count" id="count-mine"></div>
+    </div>
+    <div id="list-mine"></div>
+    <div class="section-title">Add a company not on the list</div>
+    <div class="card">
+      <div class="add-row">
+        <input id="new-name" type="search" placeholder="Company name">
+        <button class="btn" id="add-btn">Add</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Backup: export and import everything stored on this phone -->
+  <section id="view-backup" class="hidden">
+    <div class="card">
+      <div class="name">Export your notes</div>
+      <p class="note-block">Everything is stored on this phone only. Export a file before the event, and again at the end of each day, so nothing is lost.</p>
+      <button class="btn" id="export-btn">Download backup (.json)</button>
+    </div>
+    <div class="card">
+      <div class="name">Import a backup</div>
+      <p class="note-block">Restores statuses and notes from a backup file. This replaces what is on the phone now.</p>
+      <input type="file" id="import-file" accept="application/json">
+    </div>
+    <div class="card">
+      <div class="name">Stored on this phone</div>
+      <p class="note-block" id="storage-info"></p>
+    </div>
+  </section>
+</main>
+
+<script src="roster.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  var STORE_KEY = "shpe2026-v1";
+  var roster = window.ROSTER || { main_floor: [], interview: [] };
+  var state = load();
+
+  // ---------- storage (always wrapped: private mode or cleared data must not break the page)
+  function load() {
+    try {
+      var raw = localStorage.getItem(STORE_KEY);
+      if (raw) return JSON.parse(raw);
+    } catch (e) { /* fall through */ }
+    return { companies: {} };
+  }
+  function save() {
+    try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); return true; }
+    catch (e) { return false; }
+  }
+
+  // ---------- build one merged list keyed by company name
+  function key(n) { return n.toLowerCase().replace(/[^a-z0-9]+/g, ""); }
+  var companies = {};
+  function ensure(name) {
+    var k = key(name);
+    if (!companies[k]) companies[k] = { name: name, mainBooths: "", interviewBooths: "" };
+    return companies[k];
+  }
+  roster.main_floor.forEach(function (r) { ensure(r.name).mainBooths = r.booths; });
+  roster.interview.forEach(function (r) { ensure(r.name).interviewBooths = r.booths; });
+  // companies added by hand live in state.companies with a "custom" flag
+  Object.keys(state.companies).forEach(function (k) {
+    if (state.companies[k].custom && !companies[k]) {
+      companies[k] = { name: state.companies[k].name, mainBooths: "", interviewBooths: "", custom: true };
+    }
+  });
+  function sortedNames(list) {
+    return list.sort(function (a, b) { return a.name.localeCompare(b.name); });
+  }
+  function meta(k) { return state.companies[k] || {}; }
+  function setMeta(k, patch) {
+    state.companies[k] = Object.assign({}, state.companies[k] || {}, patch);
+    if (!save()) toast("Could not save on this phone (storage full or blocked)");
+  }
+
+  // ---------- helpers
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+  function toast(msg) {
+    var t = document.createElement("div");
+    t.textContent = msg;
+    t.style.cssText = "position:fixed;left:16px;right:16px;bottom:16px;background:#1b1f24;color:#fff;padding:12px;border-radius:10px;z-index:9";
+    document.body.appendChild(t);
+    setTimeout(function () { t.remove(); }, 2600);
+  }
+  function chip(label, active, onclick) {
+    var b = document.createElement("button");
+    b.className = "chip" + (active ? " on" : "");
+    b.textContent = label;
+    b.onclick = onclick;
+    return b;
+  }
+
+  // ---------- tabs
+  var tabs = document.querySelectorAll("nav button");
+  tabs.forEach(function (b) {
+    b.onclick = function () {
+      tabs.forEach(function (x) { x.classList.toggle("on", x === b); });
+      ["companies", "interviews", "mine", "backup"].forEach(function (v) {
+        document.getElementById("view-" + v).classList.toggle("hidden", v !== b.dataset.tab);
+      });
+      if (b.dataset.tab === "mine") renderMine();
+      if (b.dataset.tab === "backup") renderStorage();
+    };
+  });
+
+  // ---------- card rendering (shared by all lists)
+  function card(k, c) {
+    var m = meta(k);
+    var status = m.status || "";
+    var el = document.createElement("div");
+    el.className = "card";
+    el.innerHTML =
+      '<div class="card-head"><div>' +
+        '<div class="name">' + esc(c.name) + '</div>' +
+        '<div class="booths">' +
+          (c.mainBooths ? 'Booth ' + esc(c.mainBooths) : '') +
+          (c.mainBooths && c.interviewBooths ? ' · ' : '') +
+          (c.interviewBooths ? 'Interview ' + esc(c.interviewBooths) : '') +
+        '</div></div>' +
+        (c.interviewBooths ? '<span class="tag interview">interviews</span>' : '') +
+      '</div>' +
+      '<div class="status">' +
+        '<button class="hot' + (status === "hot" ? " on" : "") + '" data-s="hot">Priority</button>' +
+        '<button class="maybe' + (status === "maybe" ? " on" : "") + '" data-s="maybe">Maybe</button>' +
+        '<button class="skip' + (status === "skip" ? " on" : "") + '" data-s="skip">Skip</button>' +
+      '</div>' +
+      '<textarea placeholder="Notes: who you talked to, what they said, follow-ups">' + esc(m.note || "") + '</textarea>';
+
+    el.querySelectorAll(".status button").forEach(function (btn) {
+      btn.onclick = function () {
+        var next = btn.dataset.s;
+        setMeta(k, { status: m.status === next ? "" : next, name: c.name, custom: c.custom || m.custom || false });
+        render();
+      };
+    });
+    var ta = el.querySelector("textarea");
+    ta.oninput = function () {
+      setMeta(k, { note: ta.value, name: c.name, custom: c.custom || m.custom || false });
+    };
+    return el;
+  }
+
+  // ---------- Companies tab
+  var companyFilter = "all";
+  var filters = [["all", "All"], ["hot", "Priority"], ["maybe", "Maybe"], ["none", "Unreviewed"], ["interview", "Has interviews"]];
+  function renderCompanies() {
+    var q = document.getElementById("search").value.trim().toLowerCase();
+    var box = document.getElementById("list-companies");
+    var fbox = document.getElementById("filters-companies");
+    fbox.innerHTML = "";
+    filters.forEach(function (f) {
+      fbox.appendChild(chip(f[1], companyFilter === f[0], function () { companyFilter = f[0]; render(); }));
+    });
+
+    var list = sortedNames(Object.keys(companies).map(function (k) { return companies[k]; }))
+      .filter(function (c) {
+        var m = meta(key(c.name));
+        if (companyFilter === "hot" && m.status !== "hot") return false;
+        if (companyFilter === "maybe" && m.status !== "maybe") return false;
+        if (companyFilter === "none" && m.status) return false;
+        if (companyFilter === "interview" && !c.interviewBooths) return false;
+        if (!q) return true;
+        return c.name.toLowerCase().indexOf(q) !== -1 ||
+               (c.mainBooths + " " + c.interviewBooths).toLowerCase().indexOf(q) !== -1;
+      });
+
+    box.innerHTML = "";
+    list.slice(0, 400).forEach(function (c) { box.appendChild(card(key(c.name), c)); });
+    document.getElementById("count-companies").textContent =
+      list.length + " companies" + (list.length > 400 ? " (showing first 400, refine search)" : "");
+  }
+
+  // ---------- Interviews tab
+  function renderInterviews() {
+    var q = document.getElementById("search-interviews").value.trim().toLowerCase();
+    var box = document.getElementById("list-interviews");
+    var list = sortedNames(roster.interview.map(function (r) { return { name: r.name, booths: r.booths }; }))
+      .filter(function (r) { return !q || r.name.toLowerCase().indexOf(q) !== -1 || r.booths.toLowerCase().indexOf(q) !== -1; });
+    box.innerHTML = "";
+    list.forEach(function (r) {
+      var k = key(r.name);
+      var c = companies[k] || { name: r.name, mainBooths: "", interviewBooths: r.booths };
+      box.appendChild(card(k, c));
+    });
+    document.getElementById("count-interviews").textContent = list.length + " companies with interview booths";
+  }
+
+  // ---------- My list tab
+  var mineFilter = "hot";
+  function renderMine() {
+    var fbox = document.getElementById("filters-mine");
+    var box = document.getElementById("list-mine");
+    var mf = [["hot", "Priority"], ["maybe", "Maybe"], ["noted", "Has notes"], ["skip", "Skip"]];
+    fbox.innerHTML = "";
+    mf.forEach(function (f) {
+      fbox.appendChild(chip(f[1], mineFilter === f[0], function () { mineFilter = f[0]; renderMine(); }));
+    });
+    var keys = Object.keys(state.companies).filter(function (k) {
+      var m = state.companies[k];
+      if (mineFilter === "noted") return !!(m.note && m.note.trim());
+      return m.status === mineFilter;
+    });
+    var items = keys.map(function (k) {
+      return companies[k] || { name: state.companies[k].name || k, mainBooths: "", interviewBooths: "" };
+    });
+    sortedNames(items);
+    box.innerHTML = "";
+    items.forEach(function (c) { box.appendChild(card(key(c.name), c)); });
+    document.getElementById("count-mine").textContent = items.length + " shown";
+  }
+  document.getElementById("add-btn").onclick = function () {
+    var name = document.getElementById("new-name").value.trim();
+    if (!name) return;
+    var k = key(name);
+    if (!companies[k]) companies[k] = { name: name, mainBooths: "", interviewBooths: "", custom: true };
+    setMeta(k, { name: name, custom: true, status: "maybe" });
+    document.getElementById("new-name").value = "";
+    renderMine();
+    toast("Added " + name + " as Maybe");
+  };
+
+  // ---------- Backup tab
+  document.getElementById("export-btn").onclick = function () {
+    var blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "shpe2026-backup-" + new Date().toISOString().slice(0, 10) + ".json";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  };
+  document.getElementById("import-file").onchange = function (e) {
+    var f = e.target.files[0];
+    if (!f) return;
+    var reader = new FileReader();
+    reader.onload = function () {
+      try {
+        var data = JSON.parse(reader.result);
+        if (!data || typeof data.companies !== "object") throw new Error("bad shape");
+        if (!confirm("Replace what is on this phone with this backup?")) return;
+        state = data;
+        save();
+        render();
+        toast("Backup restored");
+      } catch (err) {
+        toast("That file is not a valid backup");
+      }
+    };
+    reader.readAsText(f);
+  };
+  function renderStorage() {
+    var reviewed = Object.keys(state.companies).filter(function (k) { return state.companies[k].status || state.companies[k].note; }).length;
+    var info = document.getElementById("storage-info");
+    info.textContent = reviewed + " companies with a status or note. Roster: " +
+      roster.main_floor.length + " main floor, " + roster.interview.length + " interview booths.";
+  }
+
+  // ---------- render
+  function render() {
+    renderCompanies();
+    renderInterviews();
+    if (!document.getElementById("view-mine").classList.contains("hidden")) renderMine();
+  }
+  document.getElementById("search").oninput = renderCompanies;
+  document.getElementById("search-interviews").oninput = renderInterviews;
+  render();
+
+  // ---------- offline: cache the app shell once the page has loaded over http(s)
+  if ("serviceWorker" in navigator && location.protocol.indexOf("http") === 0) {
+    navigator.serviceWorker.register("sw.js").catch(function () {});
+  }
+})();
+</script>
+</body>
+</html>
