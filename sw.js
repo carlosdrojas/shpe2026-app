@@ -1,5 +1,5 @@
 // Offline cache for the SHPE prep app. Bump CACHE when any shell file changes.
-const CACHE = "shpe2026-v6";
+const CACHE = "shpe2026-v7";
 const SHELL = ["./", "index.html", "roster.js", "floorplan.js", "manifest.json", "icon.svg"];
 
 self.addEventListener("install", (event) => {
@@ -18,6 +18,8 @@ self.addEventListener("activate", (event) => {
 // Cache-first: once loaded on wifi, the app opens with no connection.
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
+  // only the app's own files; sync calls to api.github.com must always hit the network
+  if (new URL(event.request.url).origin !== self.location.origin) return;
   event.respondWith(
     caches.match(event.request).then((hit) => hit || fetch(event.request).then((res) => {
       const copy = res.clone();

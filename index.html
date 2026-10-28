@@ -163,6 +163,19 @@
   <!-- Backup: export and import everything stored on this phone -->
   <section id="view-backup" class="hidden">
     <div class="card">
+      <div class="name">Sync across devices</div>
+      <p class="note-block">Your list always saves on this device first and works offline. When you're online it also syncs with a private GitHub repo, so your laptop and phone show the same list. One-time setup on each device: paste a GitHub token that can read and write only the <code>shpe2026-data</code> repo.</p>
+      <div class="add-row">
+        <input id="sync-token" type="password" autocomplete="off" placeholder="Paste GitHub token">
+        <button class="btn" id="sync-save">Save</button>
+      </div>
+      <p class="note-block" id="sync-status"></p>
+      <div class="add-row">
+        <button class="btn secondary" id="sync-now">Sync now</button>
+        <button class="btn secondary" id="sync-forget">Forget token</button>
+      </div>
+    </div>
+    <div class="card">
       <div class="name">Export your notes</div>
       <p class="note-block">Everything is stored on this phone only. Export a file before the event, and again at the end of each day, so nothing is lost.</p>
       <button class="btn" id="export-btn">Download backup (.json)</button>
@@ -233,8 +246,9 @@
   }
   function meta(k) { return state.companies[k] || {}; }
   function setMeta(k, patch) {
-    state.companies[k] = Object.assign({}, state.companies[k] || {}, patch);
+    state.companies[k] = Object.assign({}, state.companies[k] || {}, patch, { updated: Date.now() });
     if (!save()) toast("Could not save on this phone (storage full or blocked)");
+    scheduleSync();
   }
 
   // ---------- helpers
@@ -565,8 +579,12 @@
         var data = JSON.parse(reader.result);
         if (!data || typeof data.companies !== "object") throw new Error("bad shape");
         if (!confirm("Replace what is on this phone with this backup?")) return;
+        // stamp the restored entries as the newest edits so the next sync keeps them
+        var now = Date.now();
+        Object.keys(data.companies).forEach(function (k) { data.companies[k].updated = now; });
         state = data;
         save();
+        scheduleSync();
         render();
         toast("Backup restored");
       } catch (err) {
@@ -582,15 +600,126 @@
       roster.main_floor.length + " main floor, " + roster.interview.length + " interview booths.";
   }
 
+  // ---------- sync: everything saves on the device first; when online, it is merged
+  // with a file in a private GitHub repo so other devices (and Claude) see the same list
+  var SYNC_KEY = "shpe2026-sync";
+  var SYNC_URL = "https://api.github.com/repos/carlosdrojas/shpe2026-data/contents/state.json";
+  var syncing = false, syncTimer = null, pendingRender = false;
+  function syncConf() {
+    try { return JSON.parse(localStorage.getItem(SYNC_KEY)) || {}; } catch (e) { return {}; }
+  }
+  function setSyncConf(patch) {
+    try { localStorage.setItem(SYNC_KEY, JSON.stringify(Object.assign(syncConf(), patch))); } catch (e) { /* ignore */ }
+  }
+  function b64encode(s) { return btoa(unescape(encodeURIComponent(s))); }
+  function b64decode(s) { return decodeURIComponent(escape(atob((s || "").replace(/\n/g, "")))); }
+  // per company, the most recent edit wins; edits to different companies never collide
+  function mergeCompanies(a, b) {
+    var out = {};
+    [a || {}, b || {}].forEach(function (src) {
+      Object.keys(src).forEach(function (k) {
+        if (!out[k] || (src[k].updated || 0) > (out[k].updated || 0)) out[k] = src[k];
+      });
+    });
+    return out;
+  }
+  function scheduleSync() {
+    clearTimeout(syncTimer);
+    syncTimer = setTimeout(function () { sync(false); }, 4000);
+  }
+  function refreshAfterSync() {
+    // don't redraw under someone typing a note; redraw when they leave the box
+    var a = document.activeElement;
+    if (a && (a.tagName === "TEXTAREA" || a.tagName === "INPUT")) { pendingRender = true; return; }
+    render();
+  }
+  document.addEventListener("focusout", function () {
+    if (pendingRender) { pendingRender = false; setTimeout(render, 0); }
+  });
+  function sync(manual) {
+    var conf = syncConf();
+    if (!conf.token) { if (manual) toast("Add a sync token first"); return Promise.resolve(); }
+    if (!navigator.onLine) {
+      if (manual) toast("Offline. Saved on this device; it will sync when you're back online");
+      return Promise.resolve();
+    }
+    if (syncing) return Promise.resolve();
+    syncing = true;
+    renderSync("Syncing…");
+    var headers = { Authorization: "Bearer " + conf.token, Accept: "application/vnd.github+json" };
+    var device = /iPhone|iPad|Android/i.test(navigator.userAgent) ? "phone" : "laptop";
+    function attempt(n) {
+      return fetch(SYNC_URL + "?t=" + Date.now(), { headers: headers, cache: "no-store" })
+        .then(function (r) {
+          if (!r.ok) throw new Error(r.status === 401 || r.status === 404 ? "token can't access the sync repo" : "read failed (" + r.status + ")");
+          return r.json();
+        })
+        .then(function (file) {
+          var remoteText = b64decode(file.content);
+          var remote = {};
+          try { remote = JSON.parse(remoteText) || {}; } catch (e) { /* treat as empty */ }
+          var merged = mergeCompanies(remote.companies, state.companies);
+          var localChanged = JSON.stringify(merged) !== JSON.stringify(state.companies);
+          state.companies = merged;
+          save();
+          if (localChanged) refreshAfterSync();
+          var body = JSON.stringify({ companies: merged }, null, 2) + "\n";
+          if (body === remoteText) return;
+          return fetch(SYNC_URL, {
+            method: "PUT",
+            headers: headers,
+            body: JSON.stringify({ message: "Sync from " + device, content: b64encode(body), sha: file.sha })
+          }).then(function (r) {
+            // someone else wrote in between: re-read, re-merge, retry
+            if ((r.status === 409 || r.status === 422) && n < 2) return attempt(n + 1);
+            if (!r.ok) throw new Error("write failed (" + r.status + ")");
+          });
+        });
+    }
+    return attempt(0)
+      .then(function () { setSyncConf({ last: Date.now(), error: "" }); if (manual) toast("Synced"); })
+      .catch(function (e) { setSyncConf({ error: String(e.message || e) }); if (manual) toast("Sync failed: " + (e.message || e)); })
+      .then(function () { syncing = false; renderSync(); });
+  }
+  function renderSync(msg) {
+    var conf = syncConf();
+    var el = document.getElementById("sync-status");
+    if (!el) return;
+    el.textContent = msg || (!conf.token ? "Not set up on this device."
+      : conf.error ? "Last sync failed: " + conf.error
+      : conf.last ? "Last synced " + new Date(conf.last).toLocaleString() + "."
+      : "Token saved. Not synced yet.");
+    document.getElementById("sync-token").placeholder = conf.token ? "Token saved (paste a new one to replace)" : "Paste GitHub token";
+  }
+  document.getElementById("sync-save").onclick = function () {
+    var input = document.getElementById("sync-token");
+    var t = input.value.trim();
+    if (!t) { toast("Paste a token first"); return; }
+    setSyncConf({ token: t, error: "" });
+    input.value = "";
+    sync(true);
+  };
+  document.getElementById("sync-now").onclick = function () { sync(true); };
+  document.getElementById("sync-forget").onclick = function () {
+    setSyncConf({ token: "", last: 0, error: "" });
+    renderSync();
+    toast("Token removed from this device");
+  };
+  window.addEventListener("online", function () { sync(false); });
+  document.addEventListener("visibilitychange", function () { if (!document.hidden) sync(false); });
+
   // ---------- render
   function render() {
     renderCompanies();
     renderInterviews();
     if (!document.getElementById("view-mine").classList.contains("hidden")) renderMine();
+    if (!document.getElementById("view-route").classList.contains("hidden")) renderRoute();
   }
   document.getElementById("search").oninput = renderCompanies;
   document.getElementById("search-interviews").oninput = renderInterviews;
   render();
+  renderSync();
+  sync(false);
 
   // ---------- offline: cache the app shell once the page has loaded over http(s)
   if ("serviceWorker" in navigator && location.protocol.indexOf("http") === 0) {
