@@ -60,6 +60,11 @@
   .field { font-size: 13px; font-weight: 600; color: var(--accent); margin-top: 6px; }
   .summary { font-size: 14px; color: var(--ink); margin-top: 2px; }
   .src { font-size: 12px; color: var(--muted); }
+  .route-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-top: 1px solid var(--line); }
+  .route-row:first-of-type { border-top: 0; }
+  .booth-pill { min-width: 54px; text-align: center; font-weight: 600; font-size: 13px; background: var(--accent); color: #fff; border-radius: 6px; padding: 3px 6px; }
+  .booth-pill.iv { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
+  .pri { font-size: 12px; color: var(--hot); font-weight: 600; }
   .hidden { display: none !important; }
   .add-row { display: flex; gap: 8px; }
   .add-row input { flex: 1; }
@@ -73,6 +78,7 @@
     <button id="tab-companies" class="on" data-tab="companies">Companies</button>
     <button id="tab-interviews" data-tab="interviews">Interviews</button>
     <button id="tab-mine" data-tab="mine">My List</button>
+    <button id="tab-route" data-tab="route">Route</button>
     <button id="tab-backup" data-tab="backup">Backup</button>
   </nav>
 </header>
@@ -111,6 +117,16 @@
         <button class="btn" id="add-btn">Add</button>
       </div>
     </div>
+  </section>
+
+  <!-- Route: selected companies grouped by booth area, in walking order -->
+  <section id="view-route" class="hidden">
+    <div class="toolbar">
+      <div class="chips" id="filters-route"></div>
+      <div class="count" id="count-route"></div>
+    </div>
+    <p class="note-block">Booth numbers aren't map coordinates, so stops are grouped by hundreds (for example, 2200s) and listed in numeric order. Check the EXPOCAD floor plan for exact positions.</p>
+    <div id="list-route"></div>
   </section>
 
   <!-- Backup: export and import everything stored on this phone -->
@@ -208,10 +224,11 @@
   tabs.forEach(function (b) {
     b.onclick = function () {
       tabs.forEach(function (x) { x.classList.toggle("on", x === b); });
-      ["companies", "interviews", "mine", "backup"].forEach(function (v) {
+      ["companies", "interviews", "mine", "route", "backup"].forEach(function (v) {
         document.getElementById("view-" + v).classList.toggle("hidden", v !== b.dataset.tab);
       });
       if (b.dataset.tab === "mine") renderMine();
+      if (b.dataset.tab === "route") renderRoute();
       if (b.dataset.tab === "backup") renderStorage();
     };
   });
@@ -335,6 +352,66 @@
     renderMine();
     toast("Added " + name + " as Maybe");
   };
+
+  // ---------- Route tab
+  var routeFilter = "hot";
+  // Area label for a booth number: 1313 -> "1300s", 745 -> "700s", G9 -> "Gallery G"
+  function area(b) {
+    var s = String(b).trim();
+    if (/^G/i.test(s)) return { order: 0, label: "Gallery G (lounge and sponsor booths)" };
+    var n = parseInt(s, 10);
+    if (isNaN(n)) return null;
+    var base = Math.floor(n / 100) * 100;
+    return { order: base, label: base + "s" };
+  }
+  function boothsOf(str) {
+    return (str || "").split(",").map(function (x) { return x.trim(); }).filter(Boolean);
+  }
+  function renderRoute() {
+    var fbox = document.getElementById("filters-route");
+    var box = document.getElementById("list-route");
+    var rf = [["hot", "Priority"], ["maybe", "Priority + Maybe"]];
+    fbox.innerHTML = "";
+    rf.forEach(function (f) {
+      fbox.appendChild(chip(f[1], routeFilter === f[0], function () { routeFilter = f[0]; renderRoute(); }));
+    });
+    var wanted = routeFilter === "hot" ? ["hot"] : ["hot", "maybe"];
+    // one stop per (company, booth) so a company with several booths appears in each area
+    var stops = [];
+    Object.keys(state.companies).forEach(function (k) {
+      var m = state.companies[k];
+      if (wanted.indexOf(m.status) === -1) return;
+      var c = companies[k] || { name: m.name || k, mainBooths: "", interviewBooths: "" };
+      boothsOf(c.mainBooths).forEach(function (b) { stops.push({ name: c.name, booth: b, kind: "Booth", status: m.status }); });
+      boothsOf(c.interviewBooths).forEach(function (b) { stops.push({ name: c.name, booth: b, kind: "Interview", status: m.status }); });
+    });
+    var groups = {};
+    stops.forEach(function (s) {
+      var a = area(s.booth) || { order: 99999, label: "Other" };
+      var g = groups[a.label] || (groups[a.label] = { order: a.order, label: a.label, items: [] });
+      g.items.push(s);
+    });
+    var ordered = Object.keys(groups).map(function (k) { return groups[k]; })
+      .sort(function (a, b) { return a.order - b.order; });
+    box.innerHTML = "";
+    ordered.forEach(function (g) {
+      g.items.sort(function (a, b) { return a.booth.localeCompare(b.booth, undefined, { numeric: true }); });
+      var sec = document.createElement("div");
+      sec.className = "card";
+      sec.innerHTML = '<div class="name">' + esc(g.label) + '</div>' +
+        g.items.map(function (s) {
+          return '<div class="route-row"><span class="booth-pill ' + (s.kind === "Interview" ? "iv" : "") + '">' +
+            esc(s.booth) + '</span> ' + esc(s.name) +
+            (s.kind === "Interview" ? ' <span class="src">interview</span>' : '') +
+            (s.status === "hot" ? ' <span class="pri">priority</span>' : '') + '</div>';
+        }).join("");
+      box.appendChild(sec);
+    });
+    document.getElementById("count-route").textContent = stops.length + " stops in " + ordered.length + " areas";
+    if (!stops.length) {
+      box.innerHTML = '<p class="note-block">No companies marked yet. Mark companies as Priority or Maybe on the Companies tab.</p>';
+    }
+  }
 
   // ---------- Backup tab
   document.getElementById("export-btn").onclick = function () {
