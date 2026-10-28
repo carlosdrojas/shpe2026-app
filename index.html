@@ -57,6 +57,9 @@
   .btn { border: 0; background: var(--accent); color: #fff; border-radius: 10px; padding: 12px 16px; font-size: 15px; width: 100%; margin-top: 8px; }
   .btn.secondary { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
   .note-block { font-size: 13px; color: var(--muted); }
+  .field { font-size: 13px; font-weight: 600; color: var(--accent); margin-top: 6px; }
+  .summary { font-size: 14px; color: var(--ink); margin-top: 2px; }
+  .src { font-size: 12px; color: var(--muted); }
   .hidden { display: none !important; }
   .add-row { display: flex; gap: 8px; }
   .add-row input { flex: 1; }
@@ -159,8 +162,11 @@
     if (!companies[k]) companies[k] = { name: name, mainBooths: "", interviewBooths: "" };
     return companies[k];
   }
-  roster.main_floor.forEach(function (r) { ensure(r.name).mainBooths = r.booths; });
-  roster.interview.forEach(function (r) { ensure(r.name).interviewBooths = r.booths; });
+  function addContext(c, r) {
+    if (r.field) { c.field = r.field; c.summary = r.summary; c.source = r.source; }
+  }
+  roster.main_floor.forEach(function (r) { var c = ensure(r.name); c.mainBooths = r.booths; addContext(c, r); });
+  roster.interview.forEach(function (r) { var c = ensure(r.name); c.interviewBooths = r.booths; addContext(c, r); });
   // companies added by hand live in state.companies with a "custom" flag
   Object.keys(state.companies).forEach(function (k) {
     if (state.companies[k].custom && !companies[k]) {
@@ -226,6 +232,10 @@
         '</div></div>' +
         (c.interviewBooths ? '<span class="tag interview">interviews</span>' : '') +
       '</div>' +
+      (c.field ? '<div class="field">' + esc(c.field) + '</div>' : '') +
+      (c.summary ? '<div class="summary">' + esc(c.summary) +
+        (c.source === "directory" ? '' : ' <span class="src">(general knowledge, verify)</span>') +
+        '</div>' : '') +
       '<div class="status">' +
         '<button class="hot' + (status === "hot" ? " on" : "") + '" data-s="hot">Priority</button>' +
         '<button class="maybe' + (status === "maybe" ? " on" : "") + '" data-s="maybe">Maybe</button>' +
@@ -268,7 +278,8 @@
         if (companyFilter === "interview" && !c.interviewBooths) return false;
         if (!q) return true;
         return c.name.toLowerCase().indexOf(q) !== -1 ||
-               (c.mainBooths + " " + c.interviewBooths).toLowerCase().indexOf(q) !== -1;
+               (c.mainBooths + " " + c.interviewBooths).toLowerCase().indexOf(q) !== -1 ||
+               ((c.field || "") + " " + (c.summary || "")).toLowerCase().indexOf(q) !== -1;
       });
 
     box.innerHTML = "";
@@ -281,14 +292,13 @@
   function renderInterviews() {
     var q = document.getElementById("search-interviews").value.trim().toLowerCase();
     var box = document.getElementById("list-interviews");
-    var list = sortedNames(roster.interview.map(function (r) { return { name: r.name, booths: r.booths }; }))
-      .filter(function (r) { return !q || r.name.toLowerCase().indexOf(q) !== -1 || r.booths.toLowerCase().indexOf(q) !== -1; });
+    var list = sortedNames(roster.interview.map(function (r) { return companies[key(r.name)] || { name: r.name, interviewBooths: r.booths }; }))
+      .filter(function (c) {
+        return !q || c.name.toLowerCase().indexOf(q) !== -1 || (c.interviewBooths || "").toLowerCase().indexOf(q) !== -1 ||
+               ((c.field || "") + " " + (c.summary || "")).toLowerCase().indexOf(q) !== -1;
+      });
     box.innerHTML = "";
-    list.forEach(function (r) {
-      var k = key(r.name);
-      var c = companies[k] || { name: r.name, mainBooths: "", interviewBooths: r.booths };
-      box.appendChild(card(k, c));
-    });
+    list.forEach(function (c) { box.appendChild(card(key(c.name), c)); });
     document.getElementById("count-interviews").textContent = list.length + " companies with interview booths";
   }
 

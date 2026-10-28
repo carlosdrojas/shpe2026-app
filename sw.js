@@ -1,5 +1,5 @@
 // Offline cache for the SHPE prep app. Bump CACHE when any shell file changes.
-const CACHE = "shpe2026-v1";
+const CACHE = "shpe2026-v2";
 const SHELL = ["./", "index.html", "roster.js", "manifest.json", "icon.svg"];
 
 self.addEventListener("install", (event) => {
